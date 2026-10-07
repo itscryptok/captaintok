@@ -308,7 +308,24 @@ async function parseSuccessBody(
 
     case "text": {
       const text = await response.text();
-      return text === "" ? null : text;
+      if (text === "") return null;
+      // Guard for static hosting: an SPA fallback (e.g. Render's /* rewrite)
+      // serves index.html with HTTP 200 for unknown paths like /api/*.
+      // With responseType "auto" the caller expects JSON-shaped data, so an
+      // HTML body must fail the query instead of resolving as "successful"
+      // text that later crashes components (e.g. data.map is not a function).
+      if (responseType === "auto") {
+        const t = text.trimStart();
+        if (/^<!doctype html/i.test(t) || /^<html/i.test(t)) {
+          throw new ResponseParseError(
+            response,
+            text,
+            new SyntaxError('Unexpected token < in JSON (SPA fallback served HTML)'),
+            requestInfo,
+          );
+        }
+      }
+      return text;
     }
 
     case "blob":
